@@ -3,23 +3,101 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Siirt Rota Optimizasyonu V2</title>
-    <script src='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js'></script>
-    <link href='https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css' rel='stylesheet' />
-    <link rel="stylesheet" href="style.css">
+    <title>Siirt PTT Rota Planlayıcısı</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .map-container {
+            height: 500px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            background-color: #4CAF50;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #3e8e41;
+        }
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        #loading-indicator {
+            display: none;
+            padding: 10px;
+            background-color: #ffff99;
+            border-radius: 5px;
+            text-align: center;
+            font-weight: bold;
+        }
+        #route-info {
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
+        #locations-list {
+            margin-top: 10px;
+        }
+        #locations-list ul, #locations-list ol {
+            margin-top: 10px;
+        }
+        @media (min-width: 768px) {
+            .flex-container {
+                display: flex;
+                gap: 20px;
+            }
+            .map-container {
+                flex: 2;
+            }
+            .info-container {
+                flex: 1;
+                max-width: 400px;
+            }
+        }
+    </style>
 </head>
 <body>
-
-    <div id='map'></div>
-    <div id="sidebar">
-        <h3>Siirt Teslimat Rota Optimizasyonu</h3>
-        <button id="generate-points-btn">Rastgele Noktaları Göster</button>
-        <button id="calculate-route-btn" disabled>En Kısa Yolu Hesapla</button> <div id="route-info"></div>
-        <div class="loading" id="loading-indicator">İşlem yapılıyor...</div> <h4>Uğranacak Adresler:</h4>
-        <ol id="locations-list"></ol>
+    <h1>Siirt PTT Rota Planlayıcısı (Yandex Maps)</h1>
+    
+    <div class="container">
+        <div class="controls">
+            <button id="generate-points-btn">Rastgele Noktalar Üret</button>
+            <button id="calculate-route-btn" disabled>En Yakın Komşu Rotasını Hesapla</button>
+        </div>
+        
+        <div id="loading-indicator">İşlem yapılıyor...</div>
+        
+        <div class="flex-container">
+            <div id="map" class="map-container"></div>
+            
+            <div class="info-container">
+                <div id="route-info">Rota bilgileri burada görünecek.</div>
+                <div id="locations-list">Noktalar üretildiğinde adresler burada listelenecek.</div>
+            </div>
+        </div>
     </div>
 
-    <script src="script.js"></script>
-
+    <script src="yandexmaps.js"></script>
 </body>
 </html>
