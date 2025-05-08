@@ -1,18 +1,20 @@
 // --- 1. MAPBOX TOKEN'INIZI BURAYA GİRİN ---
-// !!! GÜVENLİK UYARISI: Lütfen hesabınızdan YENİ bir token oluşturup kullanın !!!
+// !!! GÜVENLİK UYARISI: Önceki yanıttaki uyarıyı dikkate alın ve YENİ token kullanın !!!
 mapboxgl.accessToken = 'pk.eyJ1IjoiZG94YTU2IiwiYSI6ImNtYTZraDQzNjAyMG0yanF6NmgwbXN0MDUifQ.V70oJ3N2-PALS12i959MaQ';
 
 // --- 2. SABİTLER VE BAŞLANGIÇ NOKTASI ---
 const SIIRT_PTT_LOCATION = { coords: [41.9420, 37.9275], address: "Siirt PTT Müdürlüğü" };
-const NUM_RANDOM_LOCATIONS = 11; // Toplam 12 nokta
+const NUM_RANDOM_LOCATIONS = 11;
 
-const SIIRT_MERKEZ_BOUNDS = [41.920, 37.910, 41.970, 37.950];
+// Siirt Merkez Mahallelerini kabaca içeren sınırlayıcı kutu
+const SIIRT_MERKEZ_BOUNDS = [41.915, 37.920, 41.955, 37.945];
 
 // --- 3. GLOBAL DEĞİŞKENLER ---
 let map;
 let markers = [];
-let routeLayerId = 'nn-route-layer'; // Tek katman ID'si
-let locationData = []; // Format: [{ coords: [lon, lat], address: "...", originalIndex: number }]
+let routeLayerIds = [];
+// locationData formatı güncellendi: { coords: [lon, lat], address: "...", originalIndex: number }
+let locationData = [];
 const locationsListContainer = document.getElementById('locations-list');
 const routeInfoDiv = document.getElementById('route-info');
 const loadingIndicator = document.getElementById('loading-indicator');
@@ -42,7 +44,7 @@ function generateRandomPointsInBounds(count, bounds) {
     return points;
 }
 
-// --- 6. REVERSE GEOCODING ---
+// --- 6. REVERSE GEOCODING (Mapbox ile Adres Bulma - Değişiklik Yok) ---
 async function reverseGeocode(coords) {
     const [lon, lat] = coords;
     const apiUrl = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lon},${lat}.json?limit=1&language=tr&access_token=${mapboxgl.accessToken}`;
@@ -57,10 +59,10 @@ async function reverseGeocode(coords) {
     }
 }
 
-// --- 7. NOKTALARI GÖSTERME VE ADRESLERİ ALMA ---
+// --- 7. NOKTALARI GÖSTERME VE ADRESLERİ ALMA (GÜNCELLENDİ - originalIndex eklendi) ---
 async function displayLocationsAndGetAddresses(startLocation, randomPoints) {
     setLoading(true, "Noktalar ve adresler yükleniyor...");
-    locationData = [];
+    locationData = []; // Önceki verileri temizle
     locationsListContainer.innerHTML = '<h4>Bulunan Adresler (Sırasız):</h4>';
     const unorderedList = document.createElement('ul');
     locationsListContainer.appendChild(unorderedList);
@@ -69,37 +71,48 @@ async function displayLocationsAndGetAddresses(startLocation, randomPoints) {
 
     markers.forEach(marker => marker.remove());
     markers = [];
-    removeSingleRouteLayer(); // Önceki tek rotayı temizle
+    removeRouteLayers();
 
+    // Başlangıç noktasını ekle
     const startMarker = new mapboxgl.Marker({ color: '#28a745' })
         .setLngLat(startLocation.coords)
         .setPopup(new mapboxgl.Popup().setText(startLocation.address))
         .addTo(map);
     markers.push(startMarker);
 
-    let pointCounter = 1;
+    // Rastgele noktalar için adresleri bul ve göster
+    let pointCounter = 1; // Bu sayaç 1'den N'e kadar gidecek (N=NUM_RANDOM_LOCATIONS)
     for (const coords of randomPoints) {
         const address = await reverseGeocode(coords);
+        // Koordinat, adres VE orijinal rastgele sıra numarasını sakla
         locationData.push({
             coords: coords,
             address: address,
-            originalIndex: pointCounter
+            originalIndex: pointCounter // 1'den N'e kadar olan index
         });
+
         const marker = new mapboxgl.Marker({ color: '#007bff' })
             .setLngLat(coords)
+            // Popup'ta da orijinal index'i gösterelim
             .setPopup(new mapboxgl.Popup({ offset: 25 }).setText(`Nokta ${pointCounter}: ${address}`))
             .addTo(map);
         markers.push(marker);
+
+        // Listeye adresi ve orijinal index'i ekle (sırasız olarak)
         const listItem = document.createElement('li');
         listItem.textContent = `Nokta ${pointCounter}: ${address}`;
         unorderedList.appendChild(listItem);
-        pointCounter++;
+        pointCounter++; // Sonraki nokta için sayacı artır
     }
-    if (locationData.length > 0) calculateBtn.disabled = false;
+
+    if (locationData.length > 0) {
+        calculateBtn.disabled = false;
+    }
     setLoading(false);
 }
 
-// --- 8. KUŞ UÇUŞU MESAFE HESAPLAMA ---
+
+// --- 8. KUŞ UÇUŞU MESAFE HESAPLAMA (Değişiklik Yok) ---
 function haversineDistance(coords1, coords2) {
     const R = 6371; // km
     const dLat = (coords2[1] - coords1[1]) * Math.PI / 180;
@@ -111,135 +124,148 @@ function haversineDistance(coords1, coords2) {
     return R * c;
 }
 
-// --- 9. EN YAKIN KOMŞU ALGORİTMASI ---
+// --- 9. EN YAKIN KOMŞU ALGORİTMASI (Değişiklik Yok) ---
 function nearestNeighborTSP(startLocation, points) {
     let currentLocation = startLocation;
-    let orderedRoute = [startLocation];
-    let remainingPoints = points.map(p => ({ ...p, visited: false }));
-    const numPointsToVisit = remainingPoints.length;
+    // Önemli: Rota nesneleri sadece {coords, address} değil, originalIndex'i de içermeli
+    // Ancak sıralama sadece coords'a göre yapıldığı için algoritma değişmez.
+    // Sadece dönen listedeki nesneler daha fazla bilgi içerir.
+    let orderedRoute = [startLocation]; // PTT nesnesi {coords, address} içeriyor sadece
+    let remainingPoints = points.map(p => ({ ...p, visited: false })); // Ziyaret durumunu ekle
 
+    // Ziyaret edilecek nokta sayısı kadar dön
+    const numPointsToVisit = remainingPoints.length;
     for(let visitCount = 0; visitCount < numPointsToVisit; visitCount++){
         let nearestPoint = null;
         let nearestDistance = Infinity;
-        let nearestInternalIndex = -1;
+        let nearestInternalIndex = -1; // remainingPoints içindeki index
+
         for (let i = 0; i < remainingPoints.length; i++) {
-            if (!remainingPoints[i].visited) {
+            if (!remainingPoints[i].visited) { // Sadece ziyaret edilmemişlere bak
                 const distance = haversineDistance(currentLocation.coords, remainingPoints[i].coords);
                 if (distance < nearestDistance) {
                     nearestDistance = distance;
                     nearestPoint = remainingPoints[i];
-                    nearestInternalIndex = i; // Bu index'i kullanmıyoruz ama kalsın
+                    nearestInternalIndex = i;
                 }
             }
         }
+
         if (nearestPoint) {
-            nearestPoint.visited = true; // İşaretle
-            orderedRoute.push(nearestPoint);
-            currentLocation = nearestPoint;
+            nearestPoint.visited = true; // Ziyaret edildi olarak işaretle
+            orderedRoute.push(nearestPoint); // Rotaya ekle
+            currentLocation = nearestPoint; // Mevcut konumu güncelle
+            // Kalanlardan çıkarma yerine işaretlemek daha verimli olabilir,
+            // ama splice ile devam edelim şimdilik. Alternatif: visited kontrolü.
+            // splice kullanıyorsak visited flag'ine gerek yok aslında.
         } else {
-             if(remainingPoints.filter(p => !p.visited).length === 0) break;
+             if(remainingPoints.filter(p => !p.visited).length === 0) break; // Ziyaret edilmeyen kalmadıysa çık
              console.error("Hata: Ziyaret edilmemiş en yakın nokta bulunamadı!");
-             break;
+             break; // Hata durumu
         }
     }
+     // Kalanları temizleyelim (splice yerine visited kullanıldıysa)
+    // orderedRoute = orderedRoute.filter(p => p !== undefined); // Varsa undefined temizle
+
     orderedRoute.push(startLocation); // Başa dön
     return orderedRoute;
 }
 
-// --- 10. TÜM SIRALI ROTA İÇİN YOL ÇİZME VE BİLGİ HESAPLAMA (GÜNCELLENDİ) ---
-async function calculateAndDrawNNRoute(orderedRoute) {
-    setLoading(true, "En Yakın Komşu sırasına göre yol çiziliyor...");
+
+// --- 10. YOL AĞI ÜZERİNDEN ROTA ÇİZME VE BİLGİ HESAPLAMA (Değişiklik Yok - Renk Geçişi Dahil) ---
+async function drawRouteAndCalculateInfo(orderedRoute) {
+    setLoading(true, "Yol ağı üzerinden rota çiziliyor...");
     calculateBtn.disabled = true;
     generateBtn.disabled = true;
-    removeSingleRouteLayer(); // Önceki rotayı temizle
+    removeRouteLayers();
 
-    // API'ye göndermek için tüm koordinatları hazırla (lon,lat;lon,lat;...)
-    const allCoordsString = orderedRoute.map(loc => loc.coords.join(',')).join(';');
+    let totalDuration = 0;
+    let totalDistance = 0;
+    const segmentPromises = [];
+    const totalSegments = orderedRoute.length - 1;
 
-    // Mapbox Directions API'ye TEK BİR istek gönder
-    const apiUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${allCoordsString}?geometries=geojson&overview=full&access_token=${mapboxgl.accessToken}`;
+    for (let i = 0; i < totalSegments; i++) {
+        const start = orderedRoute[i].coords;
+        const end = orderedRoute[i + 1].coords;
+        const coordsString = `${start[0]},${start[1]};${end[0]},${end[1]}`;
+        const apiUrl = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordsString}?geometries=geojson&overview=full&access_token=${mapboxgl.accessToken}`;
 
-    try {
-        const response = await fetch(apiUrl);
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(`Mapbox Directions API Hatası: ${response.status} - ${errorData.message || errorData.code || 'Bilinmeyen hata'}`);
-        }
-        const data = await response.json();
+        const progress = totalSegments <= 1 ? 0.5 : i / (totalSegments - 1);
+        const segmentColor = interpolateColor(0, 255, 0, 255, 0, 0, progress);
 
-        if (data.routes && data.routes.length > 0) {
-            const route = data.routes[0];
-            const routeGeometry = route.geometry; // Tüm rotanın geometrisi
-            const totalDuration = route.duration; // Saniye
-            const totalDistance = route.distance; // Metre
-
-            const durationMinutes = (totalDuration / 60).toFixed(1);
-            const distanceKm = (totalDistance / 1000).toFixed(1);
-
-            routeInfoDiv.innerHTML = `En Yakın Komşu Rota (Tek Seferde Çizildi): Yaklaşık <strong>${durationMinutes} dakika</strong>, <strong>${distanceKm} km</strong>`;
-
-            // Tüm rotayı tek bir katmanda çiz
-            drawSingleRoute(routeGeometry);
-
-            // Sıralı listeyi göster (Bu fonksiyon değişmedi)
-            displayOrderedRouteList(orderedRoute);
-
-            console.log("Mapbox Directions (Tüm Rota) sonucu:", data);
-        } else {
-            console.error("Mapbox Directions sonucu alınamadı:", data);
-            routeInfoDiv.innerHTML = "Hata: Rota geometrisi bulunamadı.";
-            locationsListContainer.innerHTML = '<h4>Rota Çizim Hatası</h4><p>Adres sırası gösterilemiyor.</p>';
-        }
-
-    } catch (error) {
-        console.error("Rota çizim hatası:", error);
-        routeInfoDiv.innerHTML = `Hata: Rota çizilemedi. (${error.message})`;
-        locationsListContainer.innerHTML = '<h4>Rota Çizim Hatası</h4><p>Adres sırası gösterilemiyor.</p>';
-    } finally {
-        setLoading(false);
-        calculateBtn.disabled = false;
-        generateBtn.disabled = false;
+        segmentPromises.push(
+            fetch(apiUrl)
+                .then(response => response.ok ? response.json() : Promise.reject(`API Error ${response.status}`))
+                .then(data => {
+                    if (data.routes && data.routes.length > 0) {
+                        const route = data.routes[0];
+                        return { geometry: route.geometry, duration: route.duration, distance: route.distance, color: segmentColor, id: `route-segment-${i}` };
+                    }
+                    console.warn(`Segment ${i + 1} için rota bulunamadı.`);
+                    return { geometry: { type: 'LineString', coordinates: [start, end] }, duration: 0, distance: 0, color: segmentColor, id: `route-segment-${i}` };
+                })
+                .catch(error => {
+                     console.error(`Rota segmenti ${i + 1} alınamadı:`, error);
+                     return { geometry: { type: 'LineString', coordinates: [start, end] }, duration: 0, distance: 0, color: segmentColor, id: `route-segment-${i}` };
+                })
+        );
     }
-}
 
-// --- 11. Tek Bir Rota Katmanını Çizen Fonksiyon (YENİ / GÜNCELLENDİ) ---
-// Renk geçişi kaldırıldı, sabit renk kullanılıyor.
-function drawSingleRoute(geometry) {
-    removeSingleRouteLayer(); // Varsa eski rotayı kaldır
-
-    map.addSource(routeLayerId, {
-        'type': 'geojson',
-        'data': geometry
+    const segmentResults = await Promise.all(segmentPromises);
+    segmentResults.forEach(result => {
+        if (result) {
+            totalDuration += result.duration;
+            totalDistance += result.distance;
+            drawRouteSegment(result.geometry, result.id, result.color);
+        }
     });
-    map.addLayer({
-        'id': routeLayerId,
-        'type': 'line',
-        'source': routeLayerId,
-        'layout': {
-            'line-join': 'round',
-            'line-cap': 'round'
-        },
-        'paint': {
-            'line-color': '#483D8B', // Sabit bir renk (örn: Koyu Parlement Mavisi)
-            'line-width': 5,
-            'line-opacity': 0.8
-        }
-    }, map.getStyle().layers.find(layer => layer.type === 'symbol' && layer.layout['text-field'])?.id);
+
+    const durationMinutes = (totalDuration / 60).toFixed(1);
+    const distanceKm = (totalDistance / 1000).toFixed(1);
+    routeInfoDiv.innerHTML = `En Yakın Komşu Rota: Yaklaşık <strong>${durationMinutes} dakika</strong>, <strong>${distanceKm} km</strong> (Yol Ağı Üzerinden)`;
+
+    displayOrderedRouteList(orderedRoute); // Sıralı listeyi göster
+
+    setLoading(false);
+    calculateBtn.disabled = false;
+    generateBtn.disabled = false;
 }
 
-// Tek rota katmanını temizleyen fonksiyon (YENİ / GÜNCELLENDİ)
-function removeSingleRouteLayer() {
-    if (map.getLayer(routeLayerId)) {
-        map.removeLayer(routeLayerId);
-    }
-    if (map.getSource(routeLayerId)) {
-        map.removeSource(routeLayerId);
-    }
-    // routeLayerIds dizisine gerek kalmadı
+// Renk Geçişi Fonksiyonu (Değişiklik Yok)
+function interpolateColor(r1, g1, b1, r2, g2, b2, progress) {
+    const r = Math.round(r1 + (r2 - r1) * progress);
+    const g = Math.round(g1 + (g2 - g1) * progress);
+    const b = Math.round(b1 + (b2 - b1) * progress);
+    const toHex = (c) => c.toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
 }
 
+// Tek Bir Rota Segmentini Çizen Fonksiyon (Değişiklik Yok)
+function drawRouteSegment(geometry, layerId, lineColor) {
+    routeLayerIds.push(layerId);
+    if (map.getSource(layerId)) {
+        map.getSource(layerId).setData(geometry);
+        if(map.getLayer(layerId)) map.setPaintProperty(layerId, 'line-color', lineColor);
+    } else {
+        map.addSource(layerId, { 'type': 'geojson', 'data': geometry });
+        map.addLayer({
+            'id': layerId, 'type': 'line', 'source': layerId,
+            'layout': { 'line-join': 'round', 'line-cap': 'round' },
+            'paint': { 'line-color': lineColor, 'line-width': 5, 'line-opacity': 0.85 }
+        }, map.getStyle().layers.find(layer => layer.type === 'symbol' && layer.layout['text-field'])?.id);
+    }
+}
 
-// --- 12. Sıralı Listeyi Gösterme (Değişiklik Yok) ---
+// Tüm rota katmanlarını temizleyen fonksiyon (Değişiklik Yok)
+function removeRouteLayers() {
+    routeLayerIds.forEach(id => {
+        if (map.getLayer(id)) map.removeLayer(id);
+        if (map.getSource(id)) map.removeSource(id);
+    });
+    routeLayerIds = [];
+}
+
+// --- 11. Sıralı Listeyi Gösterme (GÜNCELLENDİ - Orijinal Index Eklendi) ---
 function displayOrderedRouteList(orderedRoute) {
     locationsListContainer.innerHTML = '<h4>En Yakın Komşu Rota Sırası:</h4>';
     const orderedListElement = document.createElement('ol');
@@ -247,39 +273,45 @@ function displayOrderedRouteList(orderedRoute) {
     orderedRoute.forEach((location, index) => {
         const listItem = document.createElement('li');
         let label = "";
-        let originalIndexInfo = "";
+        let originalIndexInfo = ""; // Orijinal random nokta sırasını tutacak
 
+        // location nesnesi { coords:..., address:..., originalIndex:... } veya sadece {coords:..., address:...} (PTT için)
         if (location.originalIndex !== undefined) {
             originalIndexInfo = ` (Nokta ${location.originalIndex})`;
         }
 
-        if (index === 0) { label = "Başlangıç: "; }
-        else if (index === orderedRoute.length - 1) { label = `Bitiş (${index}): `; }
-        else { label = `${index}. Durak${originalIndexInfo}: `; }
-
+        if (index === 0) {
+            label = "Başlangıç: ";
+        } else if (index === orderedRoute.length - 1) {
+            label = `Bitiş (${index}): `; // Son adımın sırasını da gösterelim
+        } else {
+            // Aradaki duraklar için (index 1'den N'e kadar)
+            label = `${index}. Durak${originalIndexInfo}: `; // Parantez içinde orijinal index
+        }
         listItem.textContent = `${label}${location.address}`;
         orderedListElement.appendChild(listItem);
     });
+
     locationsListContainer.appendChild(orderedListElement);
 }
 
-// --- 13. Yükleme Göstergesi (Değişiklik Yok) ---
+
+// --- 12. Yükleme Göstergesi (Değişiklik Yok) ---
 function setLoading(isLoading, message = "İşlem yapılıyor...") {
     loadingIndicator.textContent = message;
     loadingIndicator.style.display = isLoading ? 'block' : 'none';
 }
 
-// --- 14. OLAY DİNLEYİCİLERİ VE BAŞLATMA (calculate Butonu Güncellendi) ---
+// --- 13. OLAY DİNLEYİCİLERİ VE BAŞLATMA (Değişiklik Yok) ---
 generateBtn.addEventListener('click', () => {
     const randomPoints = generateRandomPointsInBounds(NUM_RANDOM_LOCATIONS, SIIRT_MERKEZ_BOUNDS);
     displayLocationsAndGetAddresses(SIIRT_PTT_LOCATION, randomPoints);
 });
 
-// Hesaplama butonu artık NN sırasını bulup, TÜM rotayı tek seferde çizdiriyor
 calculateBtn.addEventListener('click', () => {
     if (locationData.length > 0) {
         const orderedRoute = nearestNeighborTSP(SIIRT_PTT_LOCATION, locationData);
-        calculateAndDrawNNRoute(orderedRoute); // Yeni fonksiyonu çağır
+        drawRouteAndCalculateInfo(orderedRoute);
     } else {
         alert("Önce gösterilecek noktalar üretilmelidir.");
     }
